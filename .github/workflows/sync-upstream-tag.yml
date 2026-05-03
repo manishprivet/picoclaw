@@ -1,0 +1,100 @@
+name: Sync Upstream Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: "Upstream tag to base the custom release on (e.g. v0.2.9)"
+        required: true
+        type: string
+      force:
+        description: "Overwrite an existing custom tag if present"
+        required: false
+        type: boolean
+        default: false
+
+env:
+  UPSTREAM_REPO: sipeed/picoclaw
+  PATCHES_BRANCH: custom-patches
+
+jobs:
+  sync:
+    name: Apply patch series to upstream tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote and fetch
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream --tags --no-recurse-submodules
+          git fetch origin "${PATCHES_BRANCH}":"refs/heads/${PATCHES_BRANCH}"
+
+      - name: Verify upstream tag exists
+        run: |
+          if ! git rev-parse --verify "refs/tags/${{ inputs.upstream_tag }}" >/dev/null 2>&1; then
+            echo "::error::Upstream tag '${{ inputs.upstream_tag }}' not found in ${UPSTREAM_REPO}"
+            exit 1
+          fi
+
+      - name: Compute target tag and check existence
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_TAG="${{ inputs.upstream_tag }}-custom"
+          echo "new_tag=${NEW_TAG}" >> "$GITHUB_OUTPUT"
+          if gh api "repos/${{ github.repository }}/git/ref/tags/${NEW_TAG}" --silent 2>/dev/null; then
+            if [ "${{ inputs.force }}" != "true" ]; then
+              echo "::error::Tag '${NEW_TAG}' already exists. Re-run with force=true to overwrite."
+              exit 1
+            fi
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Branch from upstream tag and cherry-pick patches
+        run: |
+          NEW_TAG="${{ steps.target.outputs.new_tag }}"
+          git checkout -b "release/${NEW_TAG}" "${{ inputs.upstream_tag }}"
+          BASE=$(git merge-base upstream/main "${PATCHES_BRANCH}")
+          echo "Cherry-picking ${BASE}..${PATCHES_BRANCH}:"
+          git log --oneline "${BASE}..${PATCHES_BRANCH}"
+          git cherry-pick "${BASE}..${PATCHES_BRANCH}"
+
+      - name: Create and push tag
+        run: |
+          NEW_TAG="${{ steps.target.outputs.new_tag }}"
+          git tag -a "${NEW_TAG}" -m "Release ${NEW_TAG} (upstream ${{ inputs.upstream_tag }} + custom patches)"
+          if [ "${{ steps.target.outputs.tag_exists }}" = "true" ]; then
+            git push origin ":refs/tags/${NEW_TAG}"
+          fi
+          git push origin "${NEW_TAG}"
+
+      - name: Summary
+        run: |
+          NEW_TAG="${{ steps.target.outputs.new_tag }}"
+          {
+            echo "## Synced ${NEW_TAG}"
+            echo ""
+            echo "Upstream base: \`${{ inputs.upstream_tag }}\`"
+            echo "Patches applied:"
+            echo ""
+            echo '```'
+            git log --oneline "${{ inputs.upstream_tag }}..${NEW_TAG}"
+            echo '```'
+            echo ""
+            echo "Trigger the **Release** workflow with tag \`${NEW_TAG}\` to publish binaries."
+          } >> "$GITHUB_STEP_SUMMARY"
