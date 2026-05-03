@@ -73,9 +73,13 @@ func newTestCronTool(t *testing.T) *CronTool {
 	return newTestCronToolWithConfig(t, config.DefaultConfig())
 }
 
-// TestCronTool_CommandBlockedFromRemoteChannel verifies command scheduling is restricted to internal channels
+// TestCronTool_CommandBlockedFromRemoteChannel verifies command scheduling is restricted
+// to internal channels when tools.exec.allow_remote is disabled.
 func TestCronTool_CommandBlockedFromRemoteChannel(t *testing.T) {
-	tool := newTestCronTool(t)
+	cfg := config.DefaultConfig()
+	cfg.Tools.Exec.AllowRemote = false
+
+	tool := newTestCronToolWithConfig(t, cfg)
 	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
 	result := tool.Execute(ctx, map[string]any{
 		"action":          "add",
