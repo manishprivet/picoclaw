@@ -82,36 +82,6 @@ builds:
       - goos: netbsd
         goarch: arm
 
-dockers_v2:
-  - id: picoclaw
-    dockerfile: docker/Dockerfile.goreleaser
-    extra_files:
-      - docker/entrypoint.sh
-    ids:
-      - picoclaw
-    images:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
-    tags:
-      - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly{{ else }}{{ .Tag }}{{ end }}'
-      - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly{{ else }}latest{{ end }}'
-    platforms:
-      - linux/amd64
-      - linux/arm64
-
-  - id: picoclaw-launcher
-    dockerfile: docker/Dockerfile.goreleaser.launcher
-    ids:
-      - picoclaw
-      - picoclaw-launcher
-    images:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
-    tags:
-      - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly-launcher{{ else }}{{ .Tag }}-launcher{{ end }}'
-      - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly-launcher{{ else }}launcher{{ end }}'
-    platforms:
-      - linux/amd64
-      - linux/arm64
-
 archives:
   - formats: [tar.gz]
     # this name template makes the OS and Arch compatible with the results of `uname`.
